@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLASSIFIED // BLACKBRIAR KERNEL</title>
+    <style>
+        /* --- ESTÉTICA MILITAR/CIA --- */
+        :root {
+            --bg: #0a0a0a;
+            --text: #a8a8a8; /* Cinza tático */
+            --highlight: #d4d4d4;
+            --prompt: #4caf50; /* Verde terminal */
+            --root-prompt: #f44336; /* Vermelho alerta */
+            --cursor: #4caf50;
+            --font: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 13px; /* Fonte menor para caber mais logs */
+            margin: 0; padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex; flex-direction: column;
+        }
+
+        /* Scanlines Sutis */
+        body::after {
+            content: " "; display: block; position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
+            background-size: 100% 3px; pointer-events: none; z-index: 10;
+        }
+
+        /* Barra de Rastreamento */
+        #trace-wrapper {
+            position: fixed; top: 0; left: 0; width: 100%; height: 6px;
+            background: #222; z-index: 20;
+        }
+        #trace-bar {
+            height: 100%; width: 0%; background: #ff0000;
+            transition: width 0.5s linear;
+            box-shadow: 0 0 10px #ff0000;
+        }
+
+        #terminal {
+            flex-grow: 1; padding: 10px; overflow-y: auto;
+            word-wrap: break-word; padding-bottom: 50px;
+        }
+
+        .line { margin-bottom: 2px; white-space: pre-wrap; line-height: 1.4; }
+        .cmd-echo { color: var(--highlight); font-weight: bold; }
+        .error { color: #ff5555; }
+        .info { color: #55ffff; }
+        .success { color: #55ff55; }
+        .dir { color: #5e81ac; font-weight: bold; }
+        .exec { color: #a3be8c; font-weight: bold; }
+        .hidden { opacity: 0.5; }
+
+        /* Input Area */
+        #input-zone {
+            display: flex; padding: 10px; background: #111;
+            border-top: 1px solid #333; z-index: 30;
+        }
+        #prompt-txt { margin-right: 8px; font-weight: bold; color: var(--prompt); }
+        #cmd-input {
+            flex-grow: 1; background: transparent; border: none;
+            color: #fff; font-family: var(--font); font-size: 15px;
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="trace-wrapper"><div id="trace-bar"></div></div>
+    
+    <div id="terminal"></div>
+    
+    <div id="input-zone">
+        <span id="prompt-txt">guest@node-33:~$:</span>
+        <input type="text" id="cmd-input" autocomplete="off" spellcheck="false" autocorrect="off">
+    </div>
+
+<script>
+/**
+ * ==========================================================
+ * PROJECT: BLACKBRIAR // v5.0 (NOISE & GREP UPDATE)
+ * ==========================================================
+ */
+
+const Game = {
+    trace: 0,
+    traceRate: 0.04, // Lento mas constante
+    running: true,
+    isRoot: false,
+    
+    // Seed baseada no dispositivo para consistência
+    seed: 0,
+    
+    init: function() {
+        const str = navigator.userAgent + screen.width;
+        let h = 0x811c9dc5;
+        for(let i=0; i<str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x1000193);
+        this.seed = h >>> 0;
+        
+        // Inicia o timer de rastreamento
+        setInterval(() => {
+            if(!this.running) return;
+            this.trace += this.traceRate;
+            document.getElementById('trace-bar').style.width = this.trace + "%";
+            
+            if(this.trace >= 100) Term.bsod();
+        }, 100);
+    },
+
+    // RNG Determinístico
+    rand: function() {
+        this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
+        return this.seed / 4294967296;
+    },
+    randInt: function(min, max) { return Math.floor(this.rand() * (max - min + 1)) + min; },
+    randHex: function(len) { 
+        let s = ""; 
+        for(let i=0; i<len; i++) s += Math.floor(this.rand()*16).toString(16).toUpperCase(); 
+        return s; 
+    },
+
+    penalty: function(amt) {
+        this.trace += amt;
+        Term.print(`[!] TRACE LEVEL INCREASED (+${amt}%)`, 'error');
+    }
+};
+
+const FS = {
+    path: [],
+    structure: {},
+    rootPass: "",
+    encKey: "",
+
+    // Gera centenas de linhas de log falsas para esconder a senha
+    generateNoiseLog: function(realPass) {
+        const actions = ["Session open", "Session close", "Connection refused", "Timeout", "Invalid user", "Service restart", "Cron job"];
+        const ips = ["192.168.0.1", "10.0.0.5", "172.16.254.1", "UNKNOWN"];
+        
+        let content = "";
+        // Gera 100-150 linhas de lixo antes
+        for(let i=0; i<Game.randInt(100, 150); i++) {
+            content += `[${Game.randInt(0,23)}:${Game.randInt(10,59)}] ${actions[Game.randInt(0, actions.length-1)]} from ${ips[Game.randInt(0, ips.length-1)]}\n`;
+        }
+        
+        // A LINHA IMPORTANTE (A Agulha no palheiro)
+        content += `[ERROR] ROOT PASSWORD LEAK: '${realPass}' in crash dump memory.\n`;
+        
+        // Mais 100 linhas de lixo depois
+        for(let i=0; i<Game.randInt(100, 150); i++) {
+            content += `[${Game.randInt(0,23)}:${Game.randInt(10,59)}] ${actions[Game.randInt(0, actions.length-1)]} process id ${Game.randInt(100,9999)}\n`;
+        }
+        return content;
+    },
+
+    init: function() {
+        Game.init();
+        
+        // Dados gerados unicamente para este celular
+        this.rootPass = "X" + Game.randHex(4) + "-Z"; // Ex: X4A21-Z
+        this.encKey = Game.randHex(8); // Chave final
+        
+        const noise = this.generateNoiseLog(this.rootPass);
+
+        this.structure = {
+            "root": {
+                type: "dir",
+                children: {
+                    "var": { type: "dir", children: {
+                        "log": { type: "dir", children: {
+                            // O arquivo gigante com a senha escondida
+                            "syslog.old": { type: "file", content: noise },
+                            "auth.log": { type: "file", protected: true, content: "Access Denied. Only root can view recent auth logs." }
+                        }}
+                    }},
+                    "home": { type: "dir", children: {
+                        "guest": { type: "dir", children: {
+                            "mission.txt": { type: "file", content: "OBJETIVO: Descriptografar o arquivo 'PAYLOAD.bin' na raiz.\n\nINTEL:\n1. O servidor sofreu um crash recente.\n2. A senha de root vazou no log de sistema antigo (syslog.old).\n3. O arquivo é enorme. Use 'grep' para filtrar por 'PASSWORD' ou 'ROOT'." },
+                            ".bash_history": { type: "file", hidden: true, content: "grep 'ERROR' /var/log/syslog.old\nsudo -i\nls -la" }
+                        }}
+                    }},
+                    "etc": { type: "dir", children: {
+                        "shadow": { type: "file", protected: true, content: `root:$6$${Game.randHex(10)}...` }
+                    }},
+                    // O Arquivo Final
+                    "PAYLOAD.bin": { 
+                        type: "file", 
+                        encrypted: true, 
+                        key: this.encKey,
+                        content: `\n=== TOP SECRET CIA DATABASE ===\n\nPARABÉNS, AGENTE.\nVocê invadiu um sistema seguro.\n\nTire um print desta tela.\nTOKEN DE VITÓRIA: [ ${Game.seed}-${this.encKey} ]\n` 
+                    },
+                    // Dica da chave final (só root vê)
+                    "key_backup.conf": {
+                        type: "file",
+                        protected: true, // Só root abre
+                        content: `Backup Configuration.\nEncryption Key: ${this.encKey}`
+                    }
+                }
+            }
+        };
+    },
+
+    getDir: function() {
+        let current = this.structure["root"];
+        for(let p of this.path) {
+            if(current.children && current.children[p]) current = current.children[p];
+            else return null;
+        }
+        return current;
+    }
+};
+
+const Term = {
+    history: document.getElementById('terminal'),
+    input: document.getElementById('cmd-input'),
+    prompt: document.getElementById('prompt-txt'),
+    state: null, // 'sudo', 'decrypt'
+    targetFile: null,
+
+    print: function(txt, cls='') {
+        const d = document.createElement('div');
+        d.className = 'line ' + cls;
+        d.textContent = txt;
+        this.history.appendChild(d);
+        this.history.scrollTop = this.history.scrollHeight;
+    },
+
+    bsod: function() {
+        Game.running = false;
+        document.body.innerHTML = "";
+        document.body.style.background = "#0000AA"; // Tela azul da morte clássica ou preto total
+        document.body.style.color = "#FFF";
+        document.body.style.fontFamily = "monospace";
+        document.body.style.padding = "20px";
+        document.body.innerHTML = "<h1>SYSTEM HALTED</h1><p>TRACE COMPLETE. LOCALIZATION CONFIRMED.</p><p>TERMINATING CONNECTION...</p>";
+        setTimeout(() => location.reload(), 4000);
+    },
+
+    boot: function() {
+        FS.init();
+        this.print("BLACKBRIAR SECURE KERNEL [v5.0]");
+        this.print("Initializing filesystem... OK");
+        this.print("Loading intrusion detection... OK");
+        this.print("WARNING: ACTIVE TRACE DETECTED.", 'error');
+        this.input.focus();
+        
+        document.addEventListener('click', () => this.input.focus());
+        this.input.addEventListener('keydown', (e) => {
+            if(e.key === 'Enter') this.handler();
+        });
+    },
+
+    handler: function() {
+        const raw = this.input.value; // Case sensitive!
+        this.input.value = '';
+
+        if(this.state) {
+            this.handlePass(raw);
+            return;
+        }
+
+        if(!raw.trim()) return;
+        
+        const promptSymbol = Game.isRoot ? "#" : "$";
+        const user = Game.isRoot ? "root" : "guest";
+        this.print(`${user}@node-33:${promptSymbol} ${raw}`, 'cmd-echo');
+        
+        // Penalty for command spamming/typos
+        Game.trace += 0.5; 
+
+        // Simples parser
+        const parts = raw.trim().split(' ');
+        const cmd = parts[0];
+        const arg1 = parts[1];
+        const arg2 = parts[2];
+
+        switch(cmd) {
+            case 'help':
+                this.print("Commands: ls, cd, cat, grep, sudo, clear, whoami, pwd");
+                this.print("Info: Use 'cat' to read files. Use 'grep' to search text.", 'info');
+                break;
+
+            case 'clear': this.history.innerHTML = ''; break;
+            
+            case 'whoami': this.print(Game.isRoot ? "root" : "guest"); break;
+            
+            case 'pwd': this.print("/root/" + FS.path.join("/")); break;
+
+            case 'ls':
+                const dir = FS.getDir();
+                if(!dir || !dir.children) return this.print("Error reading directory.", 'error');
+                
+                let out = [];
+                Object.keys(dir.children).forEach(k => {
+                    const item = dir.children[k];
+                    if(item.hidden && arg1 !== '-a') return; // Só mostra oculto se usar -a
+                    let style = item.type === 'dir' ? 'dir' : '';
+                    if(item.hidden) style += ' hidden';
+                    out.push(`<span class="${style}">${k}</span>`);
+                });
+                this.print(out.join('  '));
+                break;
+
+            case 'cd':
+                if(!arg1) return;
+                if(arg1 === '..') {
+                    if(FS.path.length > 0) FS.path.pop();
+                } else {
+                    const d = FS.getDir();
+                    if(d.children[arg1] && d.children[arg1].type === 'dir') {
+                        // Bloqueio de pasta (ex: /root)
+                        if(d.children[arg1].protected && !Game.isRoot) {
+                            this.print(`bash: cd: ${arg1}: Permission denied`, 'error');
+                            Game.penalty(5);
+                        } else {
+                            FS.path.push(arg1);
+                        }
+                    } else {
+                        this.print(`bash: cd: ${arg1}: No such file or directory`, 'error');
+                    }
+                }
+                break;
+
+            case 'cat':
+                if(!arg1) return this.print("Usage: cat [filename]");
+                const cDir = FS.getDir();
+                const file = cDir.children[arg1];
+                
+                if(!file) return this.print("File not found.", 'error');
+                if(file.type === 'dir') return this.print("Is a directory.", 'error');
+                
+                if(file.protected && !Game.isRoot) {
+                    this.print("Permission denied.", 'error');
+                    Game.penalty(5);
+                    return;
+                }
+                
+                if(file.encrypted) {
+                    this.print("Encrypted file detected.", 'info');
+                    this.print("Enter Decryption Key:", 'success');
+                    this.state = 'decrypt';
+                    this.targetFile = file;
+                    return;
+                }
+
+                this.print(file.content);
+                break;
+
+            case 'grep':
+                // grep [termo] [arquivo]
+                if(!arg1 || !arg2) return this.print("Usage: grep [term] [file]", 'info');
+                const gDir = FS.getDir();
+                const gFile = gDir.children[arg2];
+
+                if(!gFile || gFile.type !== 'file') return this.print("File error.", 'error');
+                
+                // Simulação de grep
+                const lines = gFile.content.split('\n');
+                let found = 0;
+                lines.forEach(line => {
+                    if(line.includes(arg1)) {
+                        this.print(line, 'success');
+                        found++;
+                    }
+                });
+                if(found === 0) this.print(`grep: 0 matches found for '${arg1}'`);
+                else this.print(`grep: ${found} matches found.`);
+                break;
+
+            case 'sudo':
+                if(Game.isRoot) return this.print("Already root.");
+                this.print("[sudo] password for guest:", 'error');
+                this.state = 'sudo';
+                break;
+
+            default:
+                this.print(`bash: ${cmd}: command not found`, 'error');
+                Game.penalty(2);
+        }
+        
+        // Atualiza prompt visual
+        const pSym = Game.isRoot ? "#" : "$";
+        const pUser = Game.isRoot ? "root" : "guest";
+        this.prompt.textContent = `${pUser}@node-33:${FS.path.join("/")}${pSym}`;
+        if(Game.isRoot) this.prompt.style.color = "var(--root-prompt)";
+    },
+
+    handlePass: function(val) {
+        if(this.state === 'sudo') {
+            if(val === FS.rootPass) {
+                Game.isRoot = true;
+                this.print("Auth accepted. Elevated to ROOT.", 'success');
+                Game.trace -= 10; // Bônus por acertar
+            } else {
+                this.print("sudo: incorrect password", 'error');
+                Game.penalty(15);
+            }
+        } else if(this.state === 'decrypt') {
+            if(val === FS.encKey) {
+                this.print("Decryption successful.", 'success');
+                this.print(this.targetFile.content);
+                Game.running = false; // Venceu
+                document.getElementById('trace-bar').style.background = "#00FF00";
+            } else {
+                this.print("Invalid Key.", 'error');
+                Game.penalty(20);
+            }
+        }
+        this.state = null;
+        this.targetFile = null;
+    }
+};
+
+window.onload = function() { Term.boot(); };
+
+</script>
+</body>
+</html>
