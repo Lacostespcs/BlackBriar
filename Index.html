@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLACKBRIAR // SECURE</title>
+    <style>
+        /* --- ESTILO VISUAL --- */
+        :root {
+            --bg: #050505; --panel: #111; --text: #aaa;
+            --accent: #00e676; --alert: #d50000; --guide: #00b0ff;
+            --admin: #ffeb3b; --font: 'Courier New', monospace;
+        }
+
+        /* 1. BLOQUEIO DE SELEÇÃO E MOUSE */
+        body {
+            background: var(--bg); color: var(--text);
+            font-family: var(--font); margin: 0; height: 100vh;
+            overflow: hidden; display: flex; flex-direction: column;
+            user-select: none; -webkit-user-select: none; -moz-user-select: none;
+        }
+
+        /* 2. OVERLAY DE SEGURANÇA (Anti-Print) */
+        #security-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; z-index: 99999;
+            justify-content: center; align-items: center; text-align: center;
+            flex-direction: column;
+        }
+        .sec-alert { color: red; font-size: 30px; font-weight: bold; border: 2px solid red; padding: 20px; animation: flash 0.5s infinite; }
+        .sec-sub { color: white; margin-top: 15px; font-size: 14px; }
+
+        /* TELA DE BANIMENTO (Anti-DevTools) */
+        #ban-screen {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 99999; color: var(--alert);
+            justify-content: center; align-items: center; flex-direction: column; text-align: center;
+        }
+
+        /* Scanlines */
+        body::after {
+            content: " "; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(0,0,0,0) 50%, rgba(0,0,0,0.15) 50%);
+            background-size: 100% 3px; pointer-events: none; z-index: 90;
+        }
+
+        /* LOBBY UI */
+        #lobby-screen {
+            display: flex; flex-direction: column; height: 100%; padding: 15px;
+            background: radial-gradient(circle, #1a1a1a 0%, #000 90%); box-sizing: border-box;
+        }
+        header { 
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 10px; border-bottom: 1px solid var(--accent); padding-bottom: 10px; 
+        }
+        h1 { margin: 0; color: #fff; letter-spacing: 4px; font-size: 20px; }
+        #admin-btn {
+            display: none; background: var(--admin); color: #000; border: none; padding: 5px 10px;
+            font-weight: bold; font-family: var(--font); cursor: pointer; font-size: 10px;
+        }
+
+        .user-setup { 
+            display: flex; justify-content: center; align-items: center; gap: 10px; 
+            margin-bottom: 10px; background: #080808; padding: 8px; border: 1px solid #333; flex-shrink: 0;
+        }
+        .lbl { font-size: 12px; font-weight: bold; color: var(--guide); }
+        #nick-in {
+            background: #000; border: 1px solid #444; color: #fff;
+            padding: 5px; font-family: var(--font); width: 140px; text-align: center; outline: none;
+        }
+
+        #chat-box {
+            flex-grow: 1; background: var(--panel); border: 1px solid #333;
+            display: flex; flex-direction: column; overflow: hidden; margin-bottom: 15px; min-height: 0;
+        }
+        #chat-msgs { flex-grow: 1; overflow-y: auto; padding: 15px; font-size: 13px; scroll-behavior: smooth; }
+        
+        .msg { margin-bottom: 6px; line-height: 1.4; border-left: 2px solid transparent; padding-left: 5px; }
+        .time { color: #444; font-size: 10px; margin-right: 5px; }
+        
+        /* Cores */
+        .role-cipher { color: var(--guide); border-left-color: var(--guide); }
+        .role-admin { color: var(--admin); border-left-color: var(--admin); text-shadow: 0 0 5px var(--admin); }
+        .role-me { color: var(--accent); }
+        .role-other { color: #ddd; }
+
+        /* Tabela Radar */
+        .radar-table {
+            background: #001100; border: 1px solid #004400; padding: 8px;
+            font-size: 11px; color: #00ff00; margin-top: 5px;
+            white-space: pre-wrap; font-family: monospace;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.1);
+        }
+
+        #chat-controls { display: flex; border-top: 1px solid #333; padding: 10px; background: #000; flex-shrink: 0; }
+        #chat-txt { flex-grow: 1; background: transparent; border: none; color: #fff; outline: none; font-family: var(--font); font-size: 14px; }
+        #chat-send { background: #222; color: #fff; border: 1px solid #444; padding: 5px 20px; cursor: pointer; font-family: var(--font); }
+
+        #action-btn {
+            background: #111; color: #555; border: 1px solid #333; padding: 15px;
+            font-size: 16px; font-family: var(--font); font-weight: bold;
+            cursor: not-allowed; text-transform: uppercase; letter-spacing: 2px; transition: 0.3s; flex-shrink: 0;
+        }
+        #action-btn.ready { background: var(--alert); color: white; cursor: pointer; border-color: var(--alert); }
+        #action-btn.resume { background: var(--accent); color: #000; border-color: var(--accent); }
+
+        #game-screen { display: none; flex-direction: column; height: 100%; }
+        #trace-wrap { width: 100%; height: 5px; background: #222; }
+        #trace-fill { width: 0%; height: 100%; background: var(--alert); transition: width 0.2s linear; }
+        #term-out { flex-grow: 1; padding: 10px; overflow-y: auto; }
+        .ln { margin-bottom: 2px; white-space: pre-wrap; font-size: 13px; line-height: 1.3; }
+        .err { color: var(--alert); } .suc { color: var(--accent); } .inf { color: var(--guide); }
+        #term-in-area { display: flex; padding: 10px; background: #111; border-top: 1px solid #333; }
+        #prompt { color: var(--accent); margin-right: 8px; font-weight: bold; }
+        #cmd { flex-grow: 1; background: transparent; border: none; color: #fff; outline: none; font-family: var(--font); font-size: 14px; }
+
+        @keyframes flash { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <div id="ban-screen">
+        <h1 style="font-size: 40px;">⛔ ACESSO NEGADO</h1>
+        <p>FERRAMENTAS DE DESENVOLVEDOR DETECTADAS.</p>
+        <small>Error: SECURITY_VIOLATION_0x99</small>
+    </div>
+
+    <div id="security-overlay">
+        <div class="sec-alert">⚠️ VIOLAÇÃO DE SEGURANÇA</div>
+        <div class="sec-sub">CAPTURA DE TELA BLOQUEADA PELO KERNEL</div>
+        <div style="font-size:10px; color:#555; margin-top:20px;">Trace Level Increased +20%</div>
+    </div>
+
+    <div id="lobby-screen">
+        <header>
+            <h1>BLACKBRIAR</h1>
+            <button id="admin-btn">ADMIN: SYNVOX</button>
+        </header>
+        <div class="user-setup">
+            <span class="lbl">CODINOME:</span>
+            <input type="text" id="nick-in" placeholder="Digite..." maxlength="12">
+        </div>
+        <div id="chat-box">
+            <div id="chat-msgs"></div>
+            <div id="chat-controls">
+                <input type="text" id="chat-txt" placeholder="Mensagem / 'apply'..." autocomplete="off">
+                <button id="chat-send">ENVIAR</button>
+            </div>
+        </div>
+        <button id="action-btn" disabled>AGUARDANDO 'APPLY'...</button>
+    </div>
+
+    <div id="game-screen">
+        <div id="trace-wrap"><div id="trace-fill"></div></div>
+        <div id="term-out"></div>
+        <div id="term-in-area">
+            <span id="prompt">guest@node:~$</span>
+            <input type="text" id="cmd" autocomplete="off" spellcheck="false">
+        </div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, push, onChildAdded } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyC32KYvQh8IwTDIs-YVhUdPP2Tu4oAyhP4",
+      authDomain: "blackbriar-server.firebaseapp.com",
+      databaseURL: "https://blackbriar-server-default-rtdb.firebaseio.com",
+      projectId: "blackbriar-server",
+      storageBucket: "blackbriar-server.firebasestorage.app",
+      messagingSenderId: "849295204914",
+      appId: "1:849295204914:web:aca6c7ffbc7ff9fe84522b"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const chatRef = ref(db, 'global_chat');
+    const progRef = ref(db, 'progress_radar');
+
+    window.Cloud = {
+        send: function(user, text, type = 'std') {
+            push(chatRef, { u: user, t: text, Tp: type, ts: Date.now() });
+        },
+        reportProgress: function(user, level) {
+            push(progRef, { u: user, l: level, ts: Date.now() });
+        }
+    };
+
+    onChildAdded(chatRef, (snapshot) => {
+        const data = snapshot.val();
+        let role = "role-other";
+        if (data.Tp === 'sys') role = "role-cipher";
+        else if (data.Tp === 'admin') role = "role-admin";
+        else if (data.u === window.SessionUser) role = "role-me";
+        if(window.Visuals) window.Visuals.addChat(data.u, data.t, role);
+    });
+
+    window.radarData = {};
+    onChildAdded(progRef, (snapshot) => {
+        const data = snapshot.val();
+        if(!window.radarData[data.u] || data.l > window.radarData[data.u]) {
+            window.radarData[data.u] = data.l;
+        }
+    });
+</script>
+
+<script>
+(function() {
+    // ESTADO
+    let State = {
+        user: "Guest", identified: false, isAdmin: false,
+        view: "idle", trace: 0, paused: false, seed: 0, timer: null, cipherTime: 120
+    };
+    window.SessionUser = "Guest"; 
+
+    // === SEGURANÇA ===
+    const Security = {
+        init: function() {
+            // Anti-Print
+            document.addEventListener('keyup', (e) => {
+                if (e.key === 'PrintScreen') this.triggerBlackout();
+            });
+            // Anti-DevKeys
+            document.addEventListener('keydown', (e) => {
+                if(e.keyCode==123 || (e.ctrlKey&&e.shiftKey&&e.keyCode==73)) {
+                    e.preventDefault(); this.banUser();
+                }
+            });
+            // Anti-Focus
+            document.addEventListener('visibilitychange', () => {
+                if(document.hidden) document.title = "⚠️ CONEXÃO INSTÁVEL";
+                else document.title = "BLACKBRIAR // SECURE";
+            });
+            // Anti-Debugger
+            setInterval(() => {
+                const t0 = Date.now();
+                (function(){}).constructor("debugger")();
+                if(Date.now()-t0 > 100) this.banUser();
+            }, 1000);
+        },
+        triggerBlackout: function() {
+            const el = document.getElementById('security-overlay');
+            el.style.display = 'flex';
+            if(State.view === 'running') {
+                Game.penalty(20);
+                Term.print(">> [SISTEMA] TENTATIVA DE CAPTURA DETECTADA.", "err");
+            }
+            setTimeout(() => el.style.display = 'none', 2000);
+        },
+        banUser: function() {
+            document.getElementById('ban-screen').style.display = 'flex';
+            document.getElementById('lobby-screen').style.display = 'none';
+            document.getElementById('game-screen').style.display = 'none';
+            if(window.Cloud && State.identified) window.Cloud.send("SYSTEM", `⚠️ CHEATER BANIDO: ${State.user}`, "sys");
+            throw new Error("BAN");
+        }
+    };
+
+    // === FILESYSTEM ===
+    const FS = {
+        tree:{}, path:[], rootP:"", key:"",
+        build: function(s) {
+            this.path=[];
+            const rnd = () => { State.seed=(State.seed*9301+49297)%233280;return State.seed/233280; };
+            const rHex = (l) => {let r="";for(let i=0;i<l;i++)r+=Math.floor(rnd()*16).toString(16).toUpperCase();return r;};
+            this.rootP = "R"+rHex(3)+"X"; this.key = rHex(6);
+            let noise=""; for(let i=0;i<100;i++) noise+=`[LOG] PID ${Math.floor(Math.random()*9000)} OK.\n`;
+            noise+=`[CRIT] ROOT PASS: '${this.rootP}'\n`;
+            for(let i=0;i<100;i++) noise+=`[LOG] Port ${Math.floor(Math.random()*80)} closed.\n`;
+            this.tree = {
+                "root":{type:"dir", k:{
+                    "var":{type:"dir", k:{ "log":{type:"dir", k:{
+                        "syslog":{type:"file", txt:noise},
+                        "auth.log":{type:"file", lock:true, txt:"Access Denied."}
+                    }}}},
+                    "home":{type:"dir", k:{ "guest":{type:"dir", k:{
+                        "mission.txt":{type:"file", txt:"OBJETIVO: PAYLOAD.bin\n1. grep syslog.\n2. sudo.\n3. secret.conf."}
+                    }}}},
+                    "PAYLOAD.bin":{type:"file", enc:true, k:this.key, txt:`\n$$$ VITORIA $$$\nTOKEN: ${s}-${this.key}\n`},
+                    "secret.conf":{type:"file", lock:true, txt:`KEY: ${this.key}`}
+                }}
+            };
+        },
+        get: function(){
+            let c=this.tree["root"]; for(let p of this.path){if(c.k&&c.k[p])c=c.k[p];else return null;} return c;
+        }
+    };
+
+    // === GAME LOGIC ===
+    const Game = {
+        init: function() {
+            State.trace = 0; State.paused = false;
+            let s = navigator.userAgent + screen.width;
+            let h=0xdeadbeef; for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),2654435761);
+            State.seed = h >>> 0;
+            if(State.timer) clearInterval(State.timer);
+            State.timer = setInterval(() => {
+                if(State.paused) return;
+                State.trace += 0.05;
+                document.getElementById('trace-fill').style.width = State.trace+"%";
+                if(State.trace>=100) { clearInterval(State.timer); Term.bsod(); }
+            }, 100);
+            FS.build(State.seed);
+        },
+        penalty: function(v) { State.trace+=v; Term.print(`[!] TRACE UP (+${v}%)`, "err"); }
+    };
+
+    // === TERMINAL ===
+    const Term = {
+        div: document.getElementById('term-out'), in: document.getElementById('cmd'), prm: document.getElementById('prompt'), mode: null, isRoot: false, tgt: null,
+        boot: function() {
+            this.div.innerHTML=""; this.isRoot=false; this.mode=null;
+            this.print("BLACKBRIAR KERNEL v13.0");
+            this.print("Conexão estabelecida.", "inf");
+            this.upd(); this.in.value=""; this.in.focus();
+            this.in.onkeydown=(e)=>{if(e.key==='Enter')this.run();};
+            document.getElementById('game-screen').onclick=()=>this.in.focus();
+        },
+        print: function(t,c=''){ this.div.innerHTML+=`<div class="ln ${c}">${t}</div>`; this.div.scrollTop=this.div.scrollHeight; },
+        upd: function(){
+            const u=this.isRoot?"root":State.user; const s=this.isRoot?"#":"$";
+            const p=FS.path.length?"/"+FS.path.join("/"):"~";
+            this.prm.innerText=`${u}@node-33:${p}${s}`;
+            this.prm.style.color=this.isRoot?"var(--alert)":"var(--accent)";
+        },
+        bsod: function(){
+            UI.reset(); alert("GAME OVER\nRastreado.");
+            if(window.Cloud) window.Cloud.send("SYSTEM", `Sinal de ${State.user} perdido.`, true);
+        },
+        run: function(){
+            const r=this.in.value; this.in.value="";
+            if(this.mode){this.pass(r);return;}
+            if(!r.trim())return;
+            this.print(this.prm.innerText+" "+r, "inf");
+            const a=r.trim().split(' ');
+            if(a[0]==="chat"||a[0]==="lobby"){UI.pause();return;}
+            
+            if(a[0]==='help') this.print("ls, cd, cat, grep, sudo, pwd, clear, chat");
+            else if(a[0]==='clear') this.div.innerHTML="";
+            else if(a[0]==='pwd') this.print("/root/"+FS.path.join("/"));
+            else if(a[0]==='ls'){
+                const d=FS.get(); if(!d)return; let o=[];
+                for(let k in d.k){let i=d.k[k],c=i.type==='dir'?'dir':''; if(i.lock||i.enc)c+=' err'; o.push(`<span class="${c}">${k}</span>`);}
+                this.print(o.join('  '));
+            }
+            else if(a[0]==='cd'){
+                if(a[1]===".."){if(FS.path.length)FS.path.pop();}
+                else if(a[1]){const n=FS.get();if(n.k[a[1]]&&n.k[a[1]].type==='dir')FS.path.push(a[1]);else{this.print("Erro.","err");Game.penalty(2);}}
+            }
+            else if(a[0]==='cat'){
+                if(!a[1])return;const f=FS.get().k[a[1]];
+                if(!f||f.type!=='file')return this.print("Erro.","err");
+                if(f.lock&&!this.isRoot){this.print("Negado.","err");Game.penalty(5);return;}
+                if(f.enc){this.print("Chave:","inf");this.mode='dec';this.tgt=f;return;}
+                this.print(f.txt);
+            }
+            else if(a[0]==='grep'){
+                if(!a[2])return this.print("grep [termo] [arq]");
+                const gf=FS.get().k[a[2]]; if(!gf)return;
+                let h=0,l=gf.txt.split('\n');
+                for(let x of l)if(x.includes(a[1])){this.print(x,"suc");h++;}
+                if(!h)this.print("0 resultados.");
+            }
+            else if(a[0]==='sudo'){
+                if(this.isRoot)return this.print("Já é root.");
+                this.print("Senha:","err");this.mode='sudo';
+            }
+            else { this.print("Inválido.","err"); Game.penalty(2); }
+            this.upd();
+        },
+        pass: function(v){
+            if(this.mode==='sudo'){
+                if(v===FS.rootP){
+                    this.isRoot=true;this.print("ROOT OK.","suc");State.trace-=15;
+                    if(window.Cloud) window.Cloud.reportProgress(State.user, 2);
+                } else {this.print("Erro.","err");Game.penalty(10);}
+            } else if(this.mode==='dec'){
+                if(v===FS.tgt.k){
+                    this.print("SUCESSO:","suc");this.print(this.tgt.txt);
+                    document.getElementById('trace-fill').style.background="#0f0";
+                    if(window.Cloud) window.Cloud.reportProgress(State.user, 3);
+                    setTimeout(()=>alert("MISSÃO CUMPRIDA!"),500);
+                } else {this.print("Erro.","err");Game.penalty(15);}
+            }
+            this.mode=null;this.upd();
+        }
+    };
+
+    // === UI ===
+    const UI = {
+        init: function() {
+            Security.init();
+            this.startCipher();
+            document.getElementById('chat-send').onclick = () => this.sendChat();
+            document.getElementById('chat-txt').onkeydown = (e) => { if(e.key==='Enter') this.sendChat(); };
+            document.getElementById('action-btn').onclick = () => this.act();
+            document.getElementById('admin-btn').onclick = () => this.dump();
+            // CHAT LIMPO NO INÍCIO (Sem mensagens automáticas)
+        },
+        startCipher: function() {
+            setInterval(() => {
+                State.cipherTime--;
+                // Avisos do Cipher sobre o tempo (Opcional, pode manter ou tirar)
+                if([60,30,10].includes(State.cipherTime)) this.uiChatAdd("Cipher", `⚠️ Limpeza em ${State.cipherTime}s...`, "role-cipher");
+                if(State.cipherTime <= 0) {
+                    State.cipherTime = 120;
+                    document.getElementById('chat-msgs').innerHTML = ''; // Limpa o chat
+                    let r = "╔═══ STATUS ═══╗\n", u = window.radarData || {};
+                    const pm = {1:"10%", 2:"50%", 3:"100%"};
+                    let s = Object.keys(u).map(k=>({n:k,l:u[k]})).sort((a,b)=>b.l-a.l);
+                    if(!s.length) r+="║ ...vazio...  ║\n";
+                    else s.slice(0,6).forEach(x=>{ r+=`║ ${x.n.substr(0,10).padEnd(10)} ${pm[x.l]||"0%"} ║\n`; });
+                    r += "╚══════════════╝";
+                    this.uiChatAdd("Cipher", "🧹 DADOS LIMPOS.\n"+r, "role-cipher");
+                }
+            }, 1000);
+        },
+        sendChat: function() {
+            const el = document.getElementById('chat-txt');
+            const txt = el.value.trim(); if(!txt) return;
+            if(txt.toLowerCase() === 'apply') {
+                if(State.identified) this.uiChatAdd("Cipher", "Já identificado.", "role-cipher");
+                else this.apply();
+            } else {
+                const u = State.identified ? State.user : "Anônimo";
+                const t = State.isAdmin ? 'admin' : 'std';
+                if(window.Cloud) window.Cloud.send(u, txt, t);
+            }
+            el.value = '';
+        },
+        apply: function() {
+            const el = document.getElementById('nick-in');
+            const val = el.value.trim();
+            if(val.length < 3) return this.uiChatAdd("Cipher", "Nome curto.", "role-cipher");
+            State.user = val; State.identified = true; window.SessionUser = val;
+            if(val.toLowerCase() === 'synvox') {
+                State.isAdmin = true; document.getElementById('admin-btn').style.display = 'block';
+                if(window.Cloud) window.Cloud.send("SYSTEM", "⚠️ ADMIN SYNVOX.", "admin");
+            } else {
+                if(window.Cloud) { window.Cloud.send("SYSTEM", `[${val}] entrou.`, "sys"); window.Cloud.reportProgress(val, 1); }
+            }
+            el.disabled = true; el.style.borderColor = "#00e676";
+            const btn = document.getElementById('action-btn');
+            btn.disabled = false; btn.innerText = "INICIAR"; btn.classList.add('ready');
+        },
+        act: function() {
+            if(State.view === 'idle') { Game.init(); Term.boot(); this.scr('game'); State.view = "running"; }
+            else { this.scr('game'); State.paused = false; State.view = "running"; }
+        },
+        pause: function() {
+            if(State.view !== "running") return;
+            State.paused = true; State.view = "paused"; this.scr('lobby');
+            const btn = document.getElementById('action-btn'); btn.innerText = "CONTINUAR"; btn.classList.add('resume');
+        },
+        reset: function() {
+            State.view = "idle"; this.scr('lobby');
+            const btn = document.getElementById('action-btn'); btn.innerText = "INICIAR"; btn.classList.remove('resume');
+        },
+        dump: function() {
+            if(!State.isAdmin) return; if(!FS.rootP) FS.build(State.seed||12345);
+            alert(`ROOT: ${FS.rootP}\nKEY: ${FS.key}`);
+        },
+        scr: function(n) {
+            document.getElementById('lobby-screen').style.display = n==='lobby'?'flex':'none';
+            document.getElementById('game-screen').style.display = n==='game'?'flex':'none';
+        },
+        uiChatAdd: function(name, txt, cls) {
+            const box = document.getElementById('chat-msgs');
+            const div = document.createElement('div');
+            if(txt.includes("╔══")) div.innerHTML = `<span class="u-name msg ${cls}">${name}:</span><div class="radar-table">${txt}</div>`;
+            else {
+                const t = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                div.className = `msg ${cls}`; div.innerHTML = `<span class="time">[${t}]</span> <b>${name}:</b> ${txt}`;
+            }
+            box.appendChild(div); box.scrollTop = box.scrollHeight;
+        }
+    };
+    window.Visuals = { addChat: UI.uiChatAdd };
+    window.onload = () => UI.init();
+})();
+</script>
+</body>
+</html>
